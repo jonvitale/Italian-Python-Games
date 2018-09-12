@@ -21,13 +21,16 @@ while (True):
 	print("****************************************************************")
 	print(sentence_no_target)
 	x = input('\nInserisci le parole corrette per ?___? \n0 per uscire\n\n')
+	# replace o` with ò, replace e` with è
+	x = re.sub(r'o`', 'ò', x)
+	x = re.sub(r'e`', 'è', x)
 	if (x == '0'):
 		break;
 	elif (x == target):
-		print("corretto!")
-		print('  _________\n /         \\\n |  O   0  |\n |    -    |\n |  \\___/  |\n \\_________/')
+		print('corretto!')
+		print('  _________\n /         \\\n |  O   O  |\n |    -    |\n |  \\___/  |\n \\_________/')
 	else:
-		print("Spiacente")
+		print('Spiacente, "' + x + '" è sbagliato.')
 		print('  _________\n /         \\\n |  /\\ /\\  |\n |    -    |\n |   ___   |\n |  /   \\  |\n \\_________/');
 		print(sentence)
 	print("\n")
