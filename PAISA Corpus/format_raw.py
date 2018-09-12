@@ -14,32 +14,47 @@ parser = argparse.ArgumentParser(description='Enter folder name that contains su
 parser.add_argument('data_folder', metavar='N', type=str, nargs='+',
                    help='a folder with subfolders for conll and kwic data')
 
-conll_names = ['TokenNum', "Word", "Lemma", "CPOS", "POS", "Features", "Head", "Dependency", "X1", "X2"]
-dtypes = {'TokenNum':np.int32, "Word":np.dtype(str), "Lemma":np.dtype(str), "CPOS":np.dtype(str), "POS":np.dtype(str), "Features":np.dtype(str), "Head":np.dtype(int), "Dependency":np.dtype(str), "X1":np.dtype(str), "X2":np.dtype(str)}
-
 foldername = parser.parse_args().data_folder[0]
 
-# custom functions for dfply
-#def _concat(X):
-#	return [	
+@make_symbolic
+def concat(words):
+	string = ' '.join(str(x) for x in words)
+	string = re.sub(r' ([\.\?\)\]\},;: ])', r'\1', string)
+	string = re.sub(r'([\(\[\{]) ', r'\1', string)
+	return string
 
 @make_symbolic
-def concat(series):
-	return ' '.join(str(x) for x in series)
+def concat_when(words, filters, keep_val, replace_with):
+	''' the length of words and filters must be the same '''
+	words = list(words)
+	filters = list(filters)
+	if len(words) == len(filters):
+		string = ''
+		for i in range(len(words)):
+			string += ' ' if i > 0 else ''
+			if filters[i] == keep_val:
+				string += str(words[i])
+			else:
+				string += 'REPLACEMESOON'
+		string = re.sub(r' ([\.\?\)\]\},;: ])', r'\1', string)
+		string = re.sub(r'([\(\[\{]) ', r'\1', string)
+		string = re.sub('REPLACEMESOON', replace_with, string)
+		return string
+	else:
+		print('Error:' + str(len(words)) + ' word values, but ' + str(len(filters)) + ' filter values.')
+		return None
 
-
-# the sentence dataframe is where we will collect our processed data
-sentences = pd.DataFrame()
+conll_names = ['TokenNum', "Word", "Lemma", "CPOS", "POS", "Features", "Head", "Dependency", "X1", "X2"]
 
 if os.path.isdir(foldername):
 	# we should have matching files in a conll and a kwic directory, make sure they are both there
-	if "conll" in os.listdir(foldername) and "kwic" in os.listdir(foldername):
+	if "conll" in os.listdir(foldername + "/data") and "kwic" in os.listdir(foldername + "/data"):
 		conll_files = os.listdir(foldername + "/data/conll")
 		kwic_files = os.listdir(foldername + "/data/kwic")
 		match_files = list(set(conll_files) & set(kwic_files))
 		if len(match_files) > 0:
 			for f in match_files:
-				filename = foldername + "/kwic/" + f
+				filename = foldername + "/data/kwic/" + f
 				with open(filename, encoding="utf-8") as in_file:
 					sentences = in_file.readlines()
 					# get sentence w/o target and target
@@ -54,7 +69,7 @@ if os.path.isdir(foldername):
 					target_names = ["_target_" + str(t) for t in range(ntargets)]
 					targets = pd.DataFrame(targets, columns=target_names)
 					targets['SentenceNum'] = list(range(1,1+len(targets)))
-				filename = foldername + "/conll/" + f
+				filename = foldername + "/data/conll/" + f
 				
 				conll = pd.read_csv(filename, sep = "\t", encoding="utf-8", header=None, names=conll_names)
 				
@@ -75,34 +90,43 @@ if os.path.isdir(foldername):
 				for t in range(ntargets):
 					conll['Target_'+str(t)] = (conll['Word'] == conll["_target_"+str(t)]).astype(int)
 					if t == 0:
-						conll['Target_Start'] = list(conll['Target_'+str(t)])	
+						conll['_target_start'] = list(conll['Target_'+str(t)])	
 					else:
-						conll['Target_Start'] += list(conll['Target_'+str(t)] [t:]) + [0] * t	
+						conll['_target_start'] += list(conll['Target_'+str(t)] [t:]) + [0] * t	
 
-				# keep only those matches in which the Target_Start value matches the number of targets
+				# keep only those matches in which the _target_start value matches the number of targets
 				for t in range(ntargets):
-					next_vals = (conll['Target_Start'] == ntargets).astype(int)
+					next_vals = (conll['_target_start'] == ntargets).astype(int)
 					#print(next_vals[56:60])
 					if t == 0:
-						conll["Target_Keep"] = list(next_vals)						
+						conll["TargetFlag"] = list(next_vals)						
 					else:
 						next_vals = [0] * t + list(next_vals)[:-t]
-						conll["Target_Keep"] += next_vals
+						conll["TargetFlag"] += next_vals
 				
 				# keep only those target matches that also have the keep flag
 				for t in range(ntargets):
-					conll['Target_'+str(t)] = conll['Target_'+str(t)] * conll['Target_Keep']
+					conll['Target_'+str(t)] = conll['Target_'+str(t)] * conll['TargetFlag']
 					conll = conll >> drop(X['_target_' + str(t)])
 
-				conll = conll >> drop(X.Target_Keep, X.Target_Start)
+				conll = conll >> drop(X._target_start, X.X1, X.X2)
 
-				conll_sum = (conll >> group_by(X.SentenceNum) >> summarize(
-						Sentence = concat(X.Word)
-					))
+				print(conll[80:90])
 
-				print(conll_sum[0:3])
-				#print(conll[56:60])
+				# prepare the targets data frame for binding, put all targets together
+				targets['Target'] = ''
+				for t in range(ntargets):
+					targets['Target'] += ' ' if t > 0 else ''
+					targets['Target'] += targets['_target_' + str(t)]
+					targets = targets >> drop(X['_target_' + str(t)])
 
+				sentences = (conll >> group_by(X.SentenceNum) >> summarize(
+						Sentence = concat(X.Word),
+						Sentence_No_Target = concat_when(X.Word, X.TargetFlag, 0, '?___?')
+					) >> ungroup >> left_join(targets))
+
+				#print(list(sentences.Sentence)[0:3])
+				
 				# iterate through each word in the conll gather sentence-level data
 				#for index, row in conll.iterrows
 				#	token_num = row['TokenNum']
@@ -115,7 +139,7 @@ if os.path.isdir(foldername):
 
 				#	sentence += 
 
-
+				sentences.to_csv(foldername + '/data/sentences.csv', index=False, encoding='utf-8')
 
 				
 		else:
