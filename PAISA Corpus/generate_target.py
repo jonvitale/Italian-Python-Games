@@ -21,14 +21,14 @@ def concat_when(words, filter_vals, keep_val, replace_with):
 				string += str(words[i])
 			else:
 				# are we substituting the target word here
-				if re.search('{word}', keep_val):
+				if re.search('{word}', replace_with):
 					temp_word = re.sub('{word}', words[i], replace_with)
 					string += temp_word
 				else:
 					string += replace_with
 		string = re.sub(r"(\w)' (\w)", r"\1'\2", string)
-		string = re.sub(r' ([\.\?\)\]\},;: ])', r'\1', string)
-		string = re.sub(r'([\(\[\{]) ', r'\1', string)
+		string = re.sub(r' ([\.\?\])},;: ])', r'\1', string)
+		string = re.sub(r'([(\[\{]) ', r'\1', string)
 		#string = re.sub('ReplaceMeAfterRESubs', replace_with, string)
 		return string
 	else:
@@ -52,13 +52,11 @@ while (True):
 	sentence_row = sentences.iloc[randi]
 	sentence_num = sentence_row['SentenceNum']
 	sentence_words = words >> mask(X.SentenceNum == sentence_num)
-	#sentence_no_target = sentence_row['Sentence_No_Target']
-	sentence = sentence_row['Sentence']
-	sentence_no_target = concat_when(sentence_words['Word'], sentence_words['TargetFlag'], 0, '?___?')
+	sentence_no_target = concat_when(sentence_words['Word'], sentence_words['TargetFlag'], 0, '*___*')		
 	target = sentence_row['Target']
 	puts(colored.black('****************************************************************'))
 	puts(colored.black(sentence_no_target))
-	puts(colored.black('\nInserisci le parole corrette per ?___? (e` -> è)\n0 per uscire\n'))
+	puts(colored.black('\nInserisci le parole corrette per *___*. (e` -> è)\n0 per uscire\n'))
 	with indent(4, quote=' >'):
 		#x = input('')
 		x = prompt.query('>>> ')
@@ -86,7 +84,8 @@ while (True):
 		else:
 			puts(colored.red(' Spiacente, solo ' + str(points) + " punti."))
 			puts(colored.red('  _________\n /         \\\n |  /\\ /\\  |\n |    J    |\n |   ___   |\n |  /   \\  |\n \\_________/'))
-			
+	
+	sentence = concat_when(sentence_words['Word'], sentence_words['TargetFlag'], 0, '*{word}*')		
 	puts(colored.black(sentence))
 	puts("\n")
 	puts(colored.magenta('(Ha '+ str(total_points) + ' punti.)'))

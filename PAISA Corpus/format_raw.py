@@ -121,23 +121,8 @@ if os.path.isdir(foldername):
 					targets = targets >> drop(X['_target_' + str(t)])
 
 				sentences = (conll >> group_by(X.SentenceNum) >> summarize(
-						Sentence = concat(X.Word),
-						Sentence_No_Target = concat_when(X.Word, X.TargetFlag, 0, '?___?')
+						Sentence = concat(X.Word)
 					) >> ungroup >> left_join(targets))
-
-				#print(list(sentences.Sentence)[0:3])
-				
-				# iterate through each word in the conll gather sentence-level data
-				#for index, row in conll.iterrows
-				#	token_num = row['TokenNum']
-					# do some stuff only onece, when we get a new sentence
-				#	if token_num == 1:
-				#		sentence_num = row['SentenceNum']
-				#		sentence = ""
-						# turn the targets at a current index into a list
-				#		target_words = targets[sentence_num].split()
-
-				#	sentence += 
 
 				sentences.to_csv(foldername + '/data/sentences.csv', index=False, encoding='utf-8')
 				conll.to_csv(foldername + '/data/words.csv', index=False, encoding='utf-8')
