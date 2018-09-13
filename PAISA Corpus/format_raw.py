@@ -1,13 +1,11 @@
 #coding: utf-8
 
 import os
+import re
 import argparse
 import pandas as pd
-import re
 import numpy as np
 from dfply import *
-#from dplython import (DplyFrame, X, diamonds, select, sift, sample_n, nrow,
-#    sample_frac, head, arrange, mutate, group_by, summarize, DelayFunction, left_join) 
 
 parser = argparse.ArgumentParser(description='Enter folder name that contains subfolders for conll and kwic data. The names \
 	in these subfolders should match to ensure that target words get paired to the correct sentences.')
@@ -19,6 +17,7 @@ foldername = parser.parse_args().data_folder[0]
 @make_symbolic
 def concat(words):
 	string = ' '.join(str(x) for x in words)
+	string = re.sub(r"(\w)' (\w)", r"\1'\2", string)
 	string = re.sub(r' ([\.\?\)\]\},;: ])', r'\1', string)
 	string = re.sub(r'([\(\[\{]) ', r'\1', string)
 	return string
@@ -35,10 +34,11 @@ def concat_when(words, filters, keep_val, replace_with):
 			if filters[i] == keep_val:
 				string += str(words[i])
 			else:
-				string += 'REPLACEMESOON'
+				string += 'REPLACEMEAFTERRESUBSHOPEFULLYTHISISNTINTHETEXT'
+		string = re.sub(r"(\w)' (\w)", r"\1'\2", string)
 		string = re.sub(r' ([\.\?\)\]\},;: ])', r'\1', string)
 		string = re.sub(r'([\(\[\{]) ', r'\1', string)
-		string = re.sub('REPLACEMESOON', replace_with, string)
+		string = re.sub('REPLACEMEAFTERRESUBSHOPEFULLYTHISISNTINTHETEXT', replace_with, string)
 		return string
 	else:
 		print('Error:' + str(len(words)) + ' word values, but ' + str(len(filters)) + ' filter values.')
@@ -140,7 +140,7 @@ if os.path.isdir(foldername):
 				#	sentence += 
 
 				sentences.to_csv(foldername + '/data/sentences.csv', index=False, encoding='utf-8')
-
+				conll.to_csv(foldername + '/data/words.csv', index=False, encoding='utf-8')
 				
 		else:
 			print("There are no conll and kwic files that match")

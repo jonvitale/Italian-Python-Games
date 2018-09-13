@@ -1,9 +1,11 @@
 #coding: utf-8
 
 import argparse
+import re
 import pandas as pd
 import numpy.random as rd
-import re
+from dfply import *
+from clint.textui import puts, indent, colored, prompt, validators
 
 parser = argparse.ArgumentParser(description='Enter a processed "sentences_[my file].csv" file to play a generation game.')
 parser.add_argument('data_folder', metavar='N', type=str, nargs='+',
@@ -12,26 +14,49 @@ parser.add_argument('data_folder', metavar='N', type=str, nargs='+',
 foldername = parser.parse_args().data_folder[0]
 
 sentences = pd.read_csv(foldername + '/data/sentences.csv', encoding="utf-8")
+words = pd.read_csv(foldername + '/data/words.csv', encoding="utf-8")
+
+total_points = 0
 
 while (True):
 	randi = rd.randint(0, len(sentences.index)-1)
-	sentence_no_target = sentences['Sentence_No_Target'].iloc[randi]
-	sentence = sentences['Sentence'].iloc[randi]
-	target = sentences['Target'].iloc[randi]
-	print("****************************************************************")
-	print(sentence_no_target)
-	x = input('\nInserisci le parole corrette per ?___? \n0 per uscire\n\n')
-	# replace o` with ò, replace e` with è
+	sentence_row = sentences.iloc[randi]
+	sentence_num = sentence_row['SentenceNum']
+	sentence_words = words >> mask(X.SentenceNum == sentence_num)
+	sentence_no_target = sentence_row['Sentence_No_Target']
+	sentence = sentence_row['Sentence']
+	target = sentence_row['Target']
+	puts(colored.black('****************************************************************'))
+	puts(colored.black(sentence_no_target))
+	puts(colored.black('\nInserisci le parole corrette per ?___? (e` -> è)\n0 per uscire\n'))
+	with indent(4, quote=' >'):
+		#x = input('')
+		x = prompt.query('>>> ')
+	# replace o` with ò, replace e` with è, a` with à
 	x = re.sub(r'o`', 'ò', x)
 	x = re.sub(r'e`', 'è', x)
+	x = re.sub(r'a`', 'à', x)
+	x = re.sub(r'u`', 'ù', x)
+
 	if (x == '0'):
 		break;
-	elif (x == target):
-		print('corretto!')
-		print('  _________\n /         \\\n |  O   O  |\n |    -    |\n |  \\___/  |\n \\_________/')
 	else:
-		print('Spiacente, "' + x + '" è sbagliato.')
-		print('  _________\n /         \\\n |  /\\ /\\  |\n |    -    |\n |   ___   |\n |  /   \\  |\n \\_________/');
-		print(sentence)
-	print("\n")
-	#print(sentences[randi])
+		points = 0
+		x = x.split()
+		target_words = sentence_words >> mask(X.TargetFlag == 1)
+		for i in range(len(x)):
+			if x[i] == target_words['Word'].iloc[i]:
+				points += 3
+			elif x[i] == target_words['Lemma'].iloc[i]:
+				points += 1
+		total_points += points
+		if points > 2:
+			puts(colored.cyan(' Fatto benne, ' + str(points) + " punti."))
+			puts(colored.cyan('  _________\n /         \\\n |  O   O  |\n |    J    |\n |  \\___/  |\n \\_________/'))
+		else:
+			puts(colored.red(' Spiacente, solo ' + str(points) + " punti."))
+			puts(colored.red('  _________\n /         \\\n |  /\\ /\\  |\n |    J    |\n |   ___   |\n |  /   \\  |\n \\_________/'))
+			puts(colored.black(sentence))
+	
+	puts("\n")
+	puts(colored.magenta('(Ha '+ str(total_points) + ' punti.)'))
