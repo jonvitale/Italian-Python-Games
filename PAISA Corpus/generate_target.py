@@ -7,6 +7,35 @@ import numpy.random as rd
 from dfply import *
 from clint.textui import puts, indent, colored, prompt, validators
 
+
+@make_symbolic
+def concat_when(words, filter_vals, keep_val, replace_with):
+	''' the length of words and filter_vals must be the same '''
+	words = list(words)
+	filter_vals = list(filter_vals)
+	if len(words) == len(filter_vals):
+		string = ''
+		for i in range(len(words)):
+			string += ' ' if i > 0 else ''
+			if filter_vals[i] == keep_val:
+				string += str(words[i])
+			else:
+				# are we substituting the target word here
+				if re.search('{word}', keep_val):
+					temp_word = re.sub('{word}', words[i], replace_with)
+					string += temp_word
+				else:
+					string += replace_with
+		string = re.sub(r"(\w)' (\w)", r"\1'\2", string)
+		string = re.sub(r' ([\.\?\)\]\},;: ])', r'\1', string)
+		string = re.sub(r'([\(\[\{]) ', r'\1', string)
+		#string = re.sub('ReplaceMeAfterRESubs', replace_with, string)
+		return string
+	else:
+		print('Error:' + str(len(words)) + ' word values, but ' + str(len(filter_vals)) + ' filter values.')
+		return None
+
+
 parser = argparse.ArgumentParser(description='Enter a processed "sentences_[my file].csv" file to play a generation game.')
 parser.add_argument('data_folder', metavar='N', type=str, nargs='+',
                    help='a folder containing a sentences file with the following columns: Sentence, Target, Sentence_no_target')
@@ -23,8 +52,9 @@ while (True):
 	sentence_row = sentences.iloc[randi]
 	sentence_num = sentence_row['SentenceNum']
 	sentence_words = words >> mask(X.SentenceNum == sentence_num)
-	sentence_no_target = sentence_row['Sentence_No_Target']
+	#sentence_no_target = sentence_row['Sentence_No_Target']
 	sentence = sentence_row['Sentence']
+	sentence_no_target = concat_when(sentence_words['Word'], sentence_words['TargetFlag'], 0, '?___?')
 	target = sentence_row['Target']
 	puts(colored.black('****************************************************************'))
 	puts(colored.black(sentence_no_target))
@@ -56,7 +86,7 @@ while (True):
 		else:
 			puts(colored.red(' Spiacente, solo ' + str(points) + " punti."))
 			puts(colored.red('  _________\n /         \\\n |  /\\ /\\  |\n |    J    |\n |   ___   |\n |  /   \\  |\n \\_________/'))
-			puts(colored.black(sentence))
-	
+			
+	puts(colored.black(sentence))
 	puts("\n")
 	puts(colored.magenta('(Ha '+ str(total_points) + ' punti.)'))
