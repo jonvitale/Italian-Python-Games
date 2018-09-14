@@ -35,6 +35,47 @@ def concat_when(words, filter_vals, keep_val, replace_with):
 		return None
 
 
+def pprint_wiktionary(word):
+	#try:
+	flag = re.search(r' \-(\w+)', word)
+	if flag:
+		flag = flag.group(1)
+	word = re.sub(r' \-(\w+)', '', word)
+	entry = def_parser.fetch(word)
+	if flag == 'debug' or flag == 'd':
+		print(entry)
+	# an entry may have several definitions (senses)
+	for i in range(len(entry)):
+		print('----------------------------------------------------')
+		print(' ' + word + ' ' + str(i+1) + ':')
+		if entry[i]['etymology'] and len(entry[i]['etymology']) > 0:
+			print(' --- Etymology ---')
+			print(entry[i]['etymology'])
+		if entry[i]['definitions'] and len(entry[i]['definitions']) > 0:
+			for j in range(len(entry[i]['definitions'])):
+				definition = entry[i]['definitions'][j]
+				if definition['partOfSpeech'] and len(definition['partOfSpeech']) > 0:
+					print(' --- Part Of Speech ---')
+					print(definition['partOfSpeech'])
+				if definition['text'] and len(definition['text']) > 0:
+					print(' --- Definition ---')
+					for k in range(len(definition['text'])):
+						print(str(k+1) + '. ' + definition['text'][k])	
+				if definition['relatedWords'] and len(definition['relatedWords']) > 0:
+					for m in range(len(definition['relatedWords'])):
+						related = definition['relatedWords'][m]
+						if related['relationshipType'] and len(related['words']) > 0:
+							print(' --- ' + related['relationshipType'] + " " + str(m+1) + '---')
+							print(related['words'])	
+				if definition['examples'] and len(definition['examples']) > 0:
+					print(' --- Examples ---')
+					for m in range(len(definition['examples'])):
+						print(definition['examples'][m])	
+		print('----------------------------------------------------')
+		print('\n')					
+	#except:
+	#	print("couldn't access Wiktionary")
+
 arg_parser = argparse.ArgumentParser(description='Enter a processed "sentences_[my file].csv" file to play a generation game.')
 arg_parser.add_argument('data_folder', metavar='N', type=str, nargs='+',
                    help='a folder containing a sentences file with the following columns: Sentence, Target, Sentence_no_target')
@@ -70,6 +111,7 @@ while True:
 			user_words = prompt.query('>>> ')
 		# replace o` with ò, replace e` with è, a` with à
 		user_words = re.sub(r'o`', 'ò', user_words)
+		user_words = re.sub(r'i`', 'ì', user_words)
 		user_words = re.sub(r'e`', 'è', user_words)
 		user_words = re.sub(r'a`', 'à', user_words)
 		user_words = re.sub(r'u`', 'ù', user_words)
@@ -78,8 +120,7 @@ while True:
 			break_all = True
 			break;
 		elif user_words[0] == "?":
-			print(def_parser.fetch(user_words[1:]))
-			print('\n')
+			pprint_wiktionary(user_words[1:])
 		else:
 			points = 0
 			user_words = user_words.split()
