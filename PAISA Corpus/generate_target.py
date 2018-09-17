@@ -9,15 +9,18 @@ from clint.textui import puts, indent, colored, prompt, validators
 from wiktionaryparser import WiktionaryParser
 
 @make_symbolic
-def concat_when(words, filter_vals, keep_val, replace_with):
+def concat_when(words, filter_vals = None, keep_val = None, replace_with = None):
 	''' the length of words and filter_vals must be the same '''
 	words = list(words)
-	filter_vals = list(filter_vals)
-	if len(words) == len(filter_vals):
+	if filter_vals is None: 
+		keep_val = True
+	else:
+		filter_vals = list(filter_vals)
+	if filter_vals is None or len(words) == len(filter_vals):
 		string = ''
 		for i in range(len(words)):
 			string += ' ' if i > 0 else ''
-			if filter_vals[i] == keep_val:
+			if filter_vals is None or filter_vals[i] == keep_val:
 				string += str(words[i])
 			else:
 				# are we substituting the target word here
@@ -29,6 +32,7 @@ def concat_when(words, filter_vals, keep_val, replace_with):
 		string = re.sub(r"(\w)' +(\w)", r"\1'\2", string)
 		string = re.sub(r' +([\.\?\])},;: ])', r'\1', string)
 		string = re.sub(r'([(\[\{]) +', r'\1', string)
+		string = re.sub(r'\s+', r' ', string)
 		return string
 	else:
 		print('Error:' + str(len(words)) + ' word values, but ' + str(len(filter_vals)) + ' filter values.')
@@ -76,34 +80,34 @@ def pprint_wiktionary(word):
 	#except:
 	#	print("couldn't access Wiktionary")
 
-arg_parser = argparse.ArgumentParser(description='Enter a processed "sentences_[my file].csv" file to play a generation game.')
+arg_parser = argparse.ArgumentParser(description='Enter a processed "Passages_[my file].csv" file to play a generation game.')
 arg_parser.add_argument('data_folder', metavar='N', type=str, nargs='+',
-                   help='a folder containing a sentences file with the following columns: Sentence, Target, Sentence_no_target')
+                   help='a folder containing a Passages file with the following columns: Passage, Target, Passage_no_target')
 
 def_parser = WiktionaryParser()
 def_parser.set_default_language('italian')
 
 foldername = arg_parser.parse_args().data_folder[0]
 
-sentence_df = pd.read_csv(foldername + '/data/sentences.csv', encoding="utf-8")
+Passage_df = pd.read_csv(foldername + '/data/Passages.csv', encoding="utf-8")
 word_df = pd.read_csv(foldername + '/data/words.csv', encoding="utf-8")
 
 total_points = 0
 
 #program loop
 while True:
-	randi = rd.randint(0, len(sentence_df.index)-1)
-	sentence_row = sentence_df.iloc[randi]
-	sentence_num = sentence_row['SentenceNum']
-	sentence_word_df = word_df >> mask(X.SentenceNum == sentence_num)
-	sentence_no_target = concat_when(sentence_word_df['Word'], sentence_word_df['TargetFlag'], 0, '*___*')		
-	target = sentence_row['Target']
+	randi = rd.randint(0, len(Passage_df.index)-1)
+	Passage_row = Passage_df.iloc[randi]
+	Passage_num = Passage_row['PassageNum']
+	Passage_word_df = word_df >> mask(X.PassageNum == Passage_num)
+	Passage_no_target = concat_when(Passage_word_df['Word'], Passage_word_df['TargetFlag'], 0, '*___*')		
+	target = Passage_row['Target']
 	puts(colored.black('****************************************************************'))
 	
-	# sentence loop
+	# Passage loop
 	while True:
 		break_all = False
-		puts(colored.black(sentence_no_target))
+		puts(colored.black(Passage_no_target))
 		puts(colored.black('\nInserisci le parole corrette per *___*. (e` -> è) \
 			\n?parole per aiuto	\
 			\n0 per uscire\n'))
@@ -124,7 +128,7 @@ while True:
 		else:
 			points = 0
 			user_words = user_words.split()
-			target_word_df = sentence_word_df >> mask(X.TargetFlag == 1)
+			target_word_df = Passage_word_df >> mask(X.TargetFlag == 1)
 			for i in range(len(user_words)):
 				user_word = user_words[i]
 				target_word = target_word_df['Word'].iloc[i]
@@ -144,15 +148,15 @@ while True:
 			total_points += points
 			if points > 2:
 				puts(colored.cyan(' Ben fatto, ' + str(points) + " punti."))
-				puts(colored.cyan('  _________\n /         \\\n |  O   O  |\n |    J    |\n |  \\___/  |\n \\_________/'))
+				puts(colored.cyan('  _________\n /         \\\n |  O   O  |\n |    J    |\n \\  \\___/  /\n  \\_______/'))
 			else:
 				puts(colored.red(' Spiacente, solo ' + str(points) + " punti."))
-				puts(colored.red('  _________\n /         \\\n |  /\\ /\\  |\n |    J    |\n |   ___   |\n |  /   \\  |\n \\_________/'))
-			# break out of the sentence loop
+				puts(colored.red('  _________\n /         \\\n |  /\\ /\\  |\n |    J    |\n \\   ___   /\n |  /   \\  |\n  \\_______/'))
+			# break out of the Passage loop
 			break
 	if break_all:
 		break
-	sentence = concat_when(sentence_word_df['Word'], sentence_word_df['TargetFlag'], 0, '*{word}*')		
-	puts(colored.black(sentence))
+	Passage = concat_when(Passage_word_df['Word'], Passage_word_df['TargetFlag'], 0, '*{word}*')		
+	puts(colored.black(Passage))
 	puts("\n")
 	puts(colored.magenta('(Ha '+ str(total_points) + ' punti.)'))

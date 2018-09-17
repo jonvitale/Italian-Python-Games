@@ -8,41 +8,60 @@ import numpy as np
 from dfply import *
 
 parser = argparse.ArgumentParser(description='Enter folder name that contains subfolders for conll and kwic data. The names \
-	in these subfolders should match to ensure that target words get paired to the correct sentences.')
+	in these subfolders should match to ensure that target words get paired to the correct passages.')
 parser.add_argument('data_folder', metavar='N', type=str, nargs='+',
                    help='a folder with subfolders for conll and kwic data')
 
 foldername = parser.parse_args().data_folder[0]
 
 @make_symbolic
-def concat(words):
-	string = ' '.join(str(x) for x in words)
-	string = re.sub(r"(\w)' (\w)", r"\1'\2", string)
-	string = re.sub(r' ([\.\?\)\]\},;: ])', r'\1', string)
-	string = re.sub(r'([\(\[\{]) ', r'\1', string)
-	return string
-
-@make_symbolic
-def concat_when(words, filters, keep_val, replace_with):
-	''' the length of words and filters must be the same '''
+def concat_when(words, filter_vals = None, keep_val = None, replace_with = None):
+	''' the length of words and filter_vals must be the same '''
 	words = list(words)
-	filters = list(filters)
-	if len(words) == len(filters):
+	if replace_with is None:
+		replace_with = ''
+	if filter_vals is None: 
+		keep_val = True
+	else:
+		filter_vals = list(filter_vals)
+	if filter_vals is None or len(words) == len(filter_vals):
 		string = ''
 		for i in range(len(words)):
-			string += ' ' if i > 0 else ''
-			if filters[i] == keep_val:
+			string += ' ' if i > 0 \
+				and len(replace_with) > 0  \
+				else ''
+			if filter_vals is None or filter_vals[i] == keep_val:
 				string += str(words[i])
 			else:
-				string += 'REPLACEMEAFTERRESUBSHOPEFULLYTHISISNTINTHETEXT'
-		string = re.sub(r"(\w)' (\w)", r"\1'\2", string)
-		string = re.sub(r' ([\.\?\)\]\},;: ])', r'\1', string)
-		string = re.sub(r'([\(\[\{]) ', r'\1', string)
-		string = re.sub('REPLACEMEAFTERRESUBSHOPEFULLYTHISISNTINTHETEXT', replace_with, string)
+				# are we substituting the target word here
+				if re.search('{word}', replace_with):
+					temp_word = re.sub('{word}', words[i], replace_with)
+					string += temp_word
+				else:
+					string += replace_with
+		string = re.sub(r"(\w)' +(\w)", r"\1'\2", string)
+		string = re.sub(r' +([\.\?\])},;: ])', r'\1', string)
+		string = re.sub(r'([(\[\{]) +', r'\1', string)
+		string = re.sub(r'\s+', r' ', string)
 		return string
 	else:
-		print('Error:' + str(len(words)) + ' word values, but ' + str(len(filters)) + ' filter values.')
+		print('Error:' + str(len(words)) + ' word values, but ' + str(len(filter_vals)) + ' filter values.')
 		return None
+
+@make_symbolic
+def re_search_group(series, pattern, group = None):
+	out = []
+	for s in series:
+		n = re.search(pattern, s)
+		if n: 
+			if group:
+				n = n.group(group)
+			else:
+				n = n.group(0)
+		else:
+			n = ''
+		out.append(n)
+	return out
 
 conll_names = ['TokenNum', "Word", "Lemma", "CPOS", "POS", "Features", "Head", "Dependency", "X1", "X2"]
 
@@ -56,11 +75,11 @@ if os.path.isdir(foldername):
 			for f in match_files:
 				filename = foldername + "/data/kwic/" + f
 				with open(filename, encoding="utf-8") as in_file:
-					sentences = in_file.readlines()
-					# get sentence w/o target and target
+					passages = in_file.readlines()
+					# get passage w/o target and target
 					targets = []
 					target_names = []
-					for s in sentences:
+					for s in passages:
 						matches = re.search(r'(.*)?<(.*?)>(.*)', s)
 						matches = matches.group(2).split()
 						targets.append(matches)
@@ -68,23 +87,33 @@ if os.path.isdir(foldername):
 					ntargets = len(targets[0])
 					target_names = ["_target_" + str(t) for t in range(ntargets)]
 					targets = pd.DataFrame(targets, columns=target_names)
-					targets['SentenceNum'] = list(range(1,1+len(targets)))
+					targets['PassageNum'] = list(range(1,1+len(targets)))
 				filename = foldername + "/data/conll/" + f
 				
 				conll = pd.read_csv(filename, sep = "\t", encoding="utf-8", header=None, names=conll_names)
 				
-				conll = conll >> mutate(
-					SentenceNum = cumsum((X.TokenNum == 1).astype(int))
+				conll >>= mutate(
+					PassageNum = cumsum((X.TokenNum == 1).astype(int)),
+					# Features from conll
+					Feature_gen = re_search_group(X.Features, r'gen=(\w+)?\|', 1),
+					Feature_mod = re_search_group(X.Features, r'mod=(\w+)?\|', 1),
+					Feature_num = re_search_group(X.Features, r'num=(\w+)?\|', 1),
+					Feature_per = re_search_group(X.Features, r'per=(\w+)?\|', 1),
+					Feature_ten = re_search_group(X.Features, r'ten=(\w+)?\|', 1)
 				) >> left_join(targets) 
 
-				conll_sum = (conll >> 
-					group_by(X.SentenceNum) >> 
-					summarize(SentenceLength = n(X.SentenceNum))
-				)	
+				# put PassageNum in front
+				cols = conll.columns.tolist()
+				cols.remove('PassageNum')
+				cols = ['PassageNum'] + cols
+				conll = conll[cols]
 				
-				conll = (conll >> left_join(conll_sum) >>
-					mutate(LastTokenFlag = (X.SentenceLength == X.TokenNum).astype(int))
-				)
+				conll >>= left_join(conll >> 
+					group_by(X.PassageNum) >> 
+					summarize(PassageLength = n(X.PassageNum))
+				) >> mutate(
+					LastTokenFlag = (X.PassageLength == X.TokenNum).astype(int)
+				) >> drop(X.PassageLength)
 				
 				# figure out which columns match the targets and if they also match the next
 				for t in range(ntargets):
@@ -109,7 +138,7 @@ if os.path.isdir(foldername):
 					conll['Target_'+str(t)] = conll['Target_'+str(t)] * conll['TargetFlag']
 					conll = conll >> drop(X['_target_' + str(t)])
 
-				conll = conll >> drop(X._target_start, X.X1, X.X2)
+				conll >>= drop(X._target_start, X.X1, X.X2)
 
 				print(conll[80:90])
 
@@ -120,11 +149,26 @@ if os.path.isdir(foldername):
 					targets['Target'] += targets['_target_' + str(t)]
 					targets = targets >> drop(X['_target_' + str(t)])
 
-				sentences = (conll >> group_by(X.SentenceNum) >> summarize(
-						Sentence = concat(X.Word)
-					) >> ungroup >> left_join(targets))
+				passages = (conll >> group_by(X.PassageNum) >> summarize(
+						PassageLength = n(X.PassageNum),
 
-				sentences.to_csv(foldername + '/data/sentences.csv', index=False, encoding='utf-8')
+				) >> ungroup >> left_join(targets))
+
+				for t in range(ntargets):
+					passages >>= left_join(conll >> group_by(X.PassageNum) >> summarize(
+						Target_Word_temp = concat_when(X.Word, X['Target_' + str(t)], 1),
+						Target_Lemma_temp = concat_when(X.Lemma, X['Target_' + str(t)], 1),
+						Target_POS_temp = concat_when(X.POS, X['Target_' + str(t)], 1),
+						Target_CPOS_temp = concat_when(X.CPOS, X['Target_' + str(t)], 1),
+					))
+					passages = passages.rename(columns = { \
+						'Target_Word_temp': 'Target_Word_' + str(t), \
+						'Target_Lemma_temp': 'Target_Lemma_' + str(t), \
+						'Target_POS_temp': 'Target_POS_' + str(t), \
+						'Target_CPOS_temp': 'Target_CPOS_' + str(t), \
+					})
+
+				passages.to_csv(foldername + '/data/passages.csv', index=False, encoding='utf-8')
 				conll.to_csv(foldername + '/data/words.csv', index=False, encoding='utf-8')
 				
 		else:
