@@ -3,7 +3,7 @@
 import argparse
 import re
 import pandas as pd
-import numpy.random as rd
+import numpy as np
 from dfply import *
 from clint.textui import puts, indent, colored, prompt, validators
 from wiktionaryparser import WiktionaryParser
@@ -51,38 +51,17 @@ def nchar(words):
 	return [len(x) for x in list(words)]
 
 @make_symbolic
-def if_else(bools, val_if_true, val_if_false):
+def ifelse(bools, val_if_true, val_if_false):
 	out = []
 	for b in bools:
 		out.append(val_if_true if b else val_if_false)
 	return out
 
 @make_symbolic
-def if_match_else(vals, targets, vals_if_true, vals_if_false):
-	vals = list(vals)
-	if isinstance(targets, pd.core.series.Series) or isinstance(targets, list):
-		targets = list(targets)
-	else:
-		targets = [targets for i in range(len(vals))]
+def np_where(bools, val_if_true, val_if_false):
+	return list(np.where(bools, val_if_true, val_if_false))
 
-	if isinstance(vals_if_true, pd.core.series.Series) or isinstance(vals_if_true, list):
-		vals_if_true = list(vals_if_true)
-	else:
-		vals_if_true = [vals_if_true for i in range(len(vals))]
 
-	if isinstance(vals_if_false, pd.core.series.Series) or isinstance(vals_if_false, list):
-		vals_if_false = list(vals_if_false)
-	else:
-		vals_if_false = [vals_if_false for i in range(len(vals))]
-	
-	out = []
-	for i in range(len(vals)):
-		#print(vals[i] + " - " + targets[i])	
-		if vals[i] == targets[i]:
-			out.append(vals_if_true[i])
-		else:
-			out.append(vals_if_false[i])
-	return out
 
 def pprint_wiktionary(word):
 	#try:
@@ -141,24 +120,30 @@ total_points = 0
 
 #program loop
 while True:
-	randi = rd.randint(0, len(passage_df.index)-1)
+	randi = np.random.randint(0, len(passage_df.index)-1)
 	passage_row = passage_df.iloc[randi]
 	passage_num = passage_row['PassageNum']
 	word_passage_df = word_df >> mask(X.PassageNum == passage_num)
 	# put this in format_raw
+	#
+	#print(word_passage_df.Word)
+	#print(word_passage_df.Word.shift(-1)) 
+	#sep_arr = list(np.where((word_passage_df.Word.shift(-1) == 'F') & (word_passage_df.Word != '('), '', ' '))
+	#print(sep_arr)
+	#print(type(sep_arr))
+	#word_passage_df['Sep'] = sep_arr
 	word_passage_df >>= mutate(	
-		#Sep = if_match_else(lead(X.CPOS), 'F', '', ' '),	
-		Sep = if_else(lead(X.CPOS) == 'F', '', ' '),
+		#Sep = ifelse(lead(X.CPOS) == 'F', '', ' '),
+		Sep = np_where((lead(X.CPOS) == 'F') & (lead(X.Word) != '('), '', ' '),
 		char_count = nchar(X.Word)		
 	) >> mutate(
 		char_count_cum = cumsum(X.char_count)
 	) >> unite('Word_Sep', ['Word', 'Sep'], remove=False, sep="")	
-	#print(word_passage_df	>> select(X.Sep, X.char_count_cum))
-	print(word_passage_df >> unite('Word_CPOS', ['Word_Sep', 'CPOS'], remove=False, sep="")	>> select(X.Word_CPOS, X.char_count_cum))
-	passage_no_target = concat_when(word_passage_df['Word'], word_passage_df['TargetFlag'], 0, '*___*')		
+	#print(word_passage_df >> unite('Word_CPOS', ['Word_Sep', 'CPOS'], remove=False, sep="")	>> select(X.Word_CPOS, X.char_count_cum))
+	passage_no_target = concat_when(word_passage_df['Word_Sep'], word_passage_df['TargetFlag'], 0, '*___* ', sep="")		
 	passage_no_target = re.sub("(.{64})", r"\1 |\n", passage_no_target, 0, re.DOTALL)
 	target = passage_row['Target']
-	puts(colored.black('****************************************************************'))
+	puts(colored.black(' __________________________________________________________________'))
 	
 	# Passage loop
 	while True:

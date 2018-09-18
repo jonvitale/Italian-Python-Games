@@ -102,8 +102,31 @@ if os.path.isdir(foldername):
 					Feature_ten = re_search_group(X.Features, r'ten=(\w+)?\|', 1)
 				) >> left_join(targets) 
 
-				# put PassageNum in front
+				# turn categorical into dummy
+				conll = pd.concat([conll, pd.get_dummies(conll['Feature_gen'], prefix='DFeature_gen')],
+						axis=1, join_axes=[conll.index])
+				conll = pd.concat([conll, pd.get_dummies(conll['Feature_mod'], prefix='DFeature_mod')],
+						axis=1, join_axes=[conll.index])
+				conll = pd.concat([conll, pd.get_dummies(conll['Feature_num'], prefix='DFeature_num')],
+						axis=1, join_axes=[conll.index])
+				conll = pd.concat([conll, pd.get_dummies(conll['Feature_per'], prefix='DFeature_per')],
+						axis=1, join_axes=[conll.index])
+				conll = pd.concat([conll, pd.get_dummies(conll['Feature_ten'], prefix='DFeature_ten')],
+						axis=1, join_axes=[conll.index])
+
+				# ad-hoc dummies
+				conll >>= mutate(
+					DFeature_Dependency_ROOT = (X.Dependency == 'ROOT').astype(int),					
+					DFeature_Dependency_aux = (X.Dependency == 'aux').astype(int),
+					DFeature_Prev1_Dependency_aux = (lag(X.Dependency, 1) == 'aux').astype(int),
+				)
+
 				cols = conll.columns.tolist()
+				# get the list of dummy features, we will need this for our learning model
+				dummy_features = list(filter(re.compile('DFeature').search, cols))
+				
+				
+				# put PassageNum in front
 				cols.remove('PassageNum')
 				cols = ['PassageNum'] + cols
 				conll = conll[cols]
@@ -162,11 +185,31 @@ if os.path.isdir(foldername):
 						Target_CPOS_temp = concat_when(X.CPOS, X['Target_' + str(t)], 1),
 					))
 					passages = passages.rename(columns = { \
-						'Target_Word_temp': 'Target_Word_' + str(t), \
-						'Target_Lemma_temp': 'Target_Lemma_' + str(t), \
-						'Target_POS_temp': 'Target_POS_' + str(t), \
-						'Target_CPOS_temp': 'Target_CPOS_' + str(t), \
+						'Target_Word_temp': 'Target_' + str(t) + '_Word', \
+						'Target_Lemma_temp': 'Target_' + str(t) + '_Lemma', \
+						'Target_POS_temp': 'Target_' + str(t) + '_POS', \
+						'Target_CPOS_temp': 'Target_' + str(t) + '_CPOS', \
 					})
+					# add numerical features (dummy)
+					#for dummy in dummy_features:
+					#	passages >>= left_join(conll >> group_by(X.PassageNum) >> summarize(
+					#		Dummy = concat_when(X[dummy], X['Target_' + str(t)], 1)
+					#	))
+					#	passages = passages.rename(columns = { \
+					#		'Dummy': 'Target_'+ str(t) + '_' + dummy, 
+					#	})
+
+				# a curated, hand-crafted, artisanal, small-batch set of sentence-level features
+				passages >>= left_join(conll >> group_by(X.PassageNum) >> summarize(
+					Target_0_num = concat_when(X['Feature_num'], X['Target_0'], 1),
+					Target_0_ten = concat_when(X['Feature_ten'], X['Target_0'], 1),
+					Target_0_per = concat_when(X['Feature_per'], X['Target_0'], 1),
+					Target_1_num = concat_when(X['Feature_num'], X['Target_1'], 1),
+					Target_1_gen = concat_when(X['Feature_gen'], X['Target_1'], 1),
+					#predictors
+					#is the firs word an auxilary verb
+					Target_0_Prev1_Dependency_aux = concat_when(X['DFeature_Prev1_Dependency_aux'], X['Target_0'], 1),
+				))
 
 				passages.to_csv(foldername + '/data/passages.csv', index=False, encoding='utf-8')
 				conll.to_csv(foldername + '/data/words.csv', index=False, encoding='utf-8')
