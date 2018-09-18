@@ -51,6 +51,13 @@ def nchar(words):
 	return [len(x) for x in list(words)]
 
 @make_symbolic
+def if_else(bools, val_if_true, val_if_false):
+	out = []
+	for b in bools:
+		out.append(val_if_true if b else val_if_false)
+	return out
+
+@make_symbolic
 def if_match_else(vals, targets, vals_if_true, vals_if_false):
 	vals = list(vals)
 	if isinstance(targets, pd.core.series.Series) or isinstance(targets, list):
@@ -141,13 +148,13 @@ while True:
 	# put this in format_raw
 	word_passage_df >>= mutate(	
 		#Sep = if_match_else(lead(X.CPOS), 'F', '', ' '),	
-		Sep = lead(X.CPOS) == 'F',
+		Sep = if_else(lead(X.CPOS) == 'F', '', ' '),
 		char_count = nchar(X.Word)		
 	) >> mutate(
 		char_count_cum = cumsum(X.char_count)
-	) #>> unite('Word_Sep', ['Word', 'Sep'], remove=False, sep="")	
-	print(word_passage_df	>> select(X.Sep, X.char_count_cum))
-	#print(word_passage_df >> unite('Word_CPOS', ['Word_Sep', 'CPOS'], remove=False, sep="")	>> select(X.Word_CPOS, X.char_count_cum))
+	) >> unite('Word_Sep', ['Word', 'Sep'], remove=False, sep="")	
+	#print(word_passage_df	>> select(X.Sep, X.char_count_cum))
+	print(word_passage_df >> unite('Word_CPOS', ['Word_Sep', 'CPOS'], remove=False, sep="")	>> select(X.Word_CPOS, X.char_count_cum))
 	passage_no_target = concat_when(word_passage_df['Word'], word_passage_df['TargetFlag'], 0, '*___*')		
 	passage_no_target = re.sub("(.{64})", r"\1 |\n", passage_no_target, 0, re.DOTALL)
 	target = passage_row['Target']
