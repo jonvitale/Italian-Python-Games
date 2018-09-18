@@ -9,9 +9,15 @@ from clint.textui import puts, indent, colored, prompt, validators
 from wiktionaryparser import WiktionaryParser
 
 @make_symbolic
-def concat_when(words, filter_vals = None, keep_val = None, replace_with = None):
-	''' the length of words and filter_vals must be the same '''
+def concat_when(words, filter_vals = None, keep_val = None, replace_with = None, sep=' '):
+	''' This function concats strings from the words list on the occasion
+			that the value in filter_vals matches the value in keep_val,
+			if there is not a match then substitue with replace_with, unless None, then
+			simply do not add anything for the given index
+	'''
 	words = list(words)
+	if replace_with is None:
+		replace_with = ''
 	if filter_vals is None: 
 		keep_val = True
 	else:
@@ -19,7 +25,9 @@ def concat_when(words, filter_vals = None, keep_val = None, replace_with = None)
 	if filter_vals is None or len(words) == len(filter_vals):
 		string = ''
 		for i in range(len(words)):
-			string += ' ' if i > 0 else ''
+			string += sep if i > 0 \
+				and len(replace_with) > 0  \
+				else ''
 			if filter_vals is None or filter_vals[i] == keep_val:
 				string += str(words[i])
 			else:
@@ -38,6 +46,36 @@ def concat_when(words, filter_vals = None, keep_val = None, replace_with = None)
 		print('Error:' + str(len(words)) + ' word values, but ' + str(len(filter_vals)) + ' filter values.')
 		return None
 
+@make_symbolic
+def nchar(words):
+	return [len(x) for x in list(words)]
+
+@make_symbolic
+def if_match_else(vals, targets, vals_if_true, vals_if_false):
+	vals = list(vals)
+	if isinstance(targets, pd.core.series.Series) or isinstance(targets, list):
+		targets = list(targets)
+	else:
+		targets = [targets for i in range(len(vals))]
+
+	if isinstance(vals_if_true, pd.core.series.Series) or isinstance(vals_if_true, list):
+		vals_if_true = list(vals_if_true)
+	else:
+		vals_if_true = [vals_if_true for i in range(len(vals))]
+
+	if isinstance(vals_if_false, pd.core.series.Series) or isinstance(vals_if_false, list):
+		vals_if_false = list(vals_if_false)
+	else:
+		vals_if_false = [vals_if_false for i in range(len(vals))]
+	
+	out = []
+	for i in range(len(vals)):
+		#print(vals[i] + " - " + targets[i])	
+		if vals[i] == targets[i]:
+			out.append(vals_if_true[i])
+		else:
+			out.append(vals_if_false[i])
+	return out
 
 def pprint_wiktionary(word):
 	#try:
@@ -82,32 +120,44 @@ def pprint_wiktionary(word):
 
 arg_parser = argparse.ArgumentParser(description='Enter a processed "Passages_[my file].csv" file to play a generation game.')
 arg_parser.add_argument('data_folder', metavar='N', type=str, nargs='+',
-                   help='a folder containing a Passages file with the following columns: Passage, Target, Passage_no_target')
+                   help='a folder containing a Passages file with the following columns: Passage, Target, passage_no_target')
 
 def_parser = WiktionaryParser()
 def_parser.set_default_language('italian')
 
 foldername = arg_parser.parse_args().data_folder[0]
 
-Passage_df = pd.read_csv(foldername + '/data/Passages.csv', encoding="utf-8")
+passage_df = pd.read_csv(foldername + '/data/Passages.csv', encoding="utf-8")
 word_df = pd.read_csv(foldername + '/data/words.csv', encoding="utf-8")
 
 total_points = 0
 
 #program loop
 while True:
-	randi = rd.randint(0, len(Passage_df.index)-1)
-	Passage_row = Passage_df.iloc[randi]
-	Passage_num = Passage_row['PassageNum']
-	Passage_word_df = word_df >> mask(X.PassageNum == Passage_num)
-	Passage_no_target = concat_when(Passage_word_df['Word'], Passage_word_df['TargetFlag'], 0, '*___*')		
-	target = Passage_row['Target']
+	randi = rd.randint(0, len(passage_df.index)-1)
+	passage_row = passage_df.iloc[randi]
+	passage_num = passage_row['PassageNum']
+	word_passage_df = word_df >> mask(X.PassageNum == passage_num)
+	# put this in format_raw
+	word_passage_df >>= mutate(	
+		#Sep = if_match_else(lead(X.CPOS), 'F', '', ' '),	
+		Sep = lead(X.CPOS) == 'F',
+		char_count = nchar(X.Word)		
+	) >> mutate(
+		char_count_cum = cumsum(X.char_count)
+	) #>> unite('Word_Sep', ['Word', 'Sep'], remove=False, sep="")	
+	print(word_passage_df	>> select(X.Sep, X.char_count_cum))
+	#print(word_passage_df >> unite('Word_CPOS', ['Word_Sep', 'CPOS'], remove=False, sep="")	>> select(X.Word_CPOS, X.char_count_cum))
+	passage_no_target = concat_when(word_passage_df['Word'], word_passage_df['TargetFlag'], 0, '*___*')		
+	passage_no_target = re.sub("(.{64})", r"\1 |\n", passage_no_target, 0, re.DOTALL)
+	target = passage_row['Target']
 	puts(colored.black('****************************************************************'))
 	
 	# Passage loop
 	while True:
 		break_all = False
-		puts(colored.black(Passage_no_target))
+		with indent(2, quote='|'):
+			puts(colored.black(passage_no_target))
 		puts(colored.black('\nInserisci le parole corrette per *___*. (e` -> è) \
 			\n?parole per aiuto	\
 			\n0 per uscire\n'))
@@ -128,7 +178,7 @@ while True:
 		else:
 			points = 0
 			user_words = user_words.split()
-			target_word_df = Passage_word_df >> mask(X.TargetFlag == 1)
+			target_word_df = word_passage_df >> mask(X.TargetFlag == 1)
 			for i in range(len(user_words)):
 				user_word = user_words[i]
 				target_word = target_word_df['Word'].iloc[i]
@@ -156,7 +206,9 @@ while True:
 			break
 	if break_all:
 		break
-	Passage = concat_when(Passage_word_df['Word'], Passage_word_df['TargetFlag'], 0, '*{word}*')		
-	puts(colored.black(Passage))
+	passage = concat_when(word_passage_df['Word'], word_passage_df['TargetFlag'], 0, '*{word}*')		
+	passage = re.sub("(.{64})", r"\1 |\n", passage, 0, re.DOTALL)
+	with indent(2, quote='|'):
+		puts(colored.black(passage))
 	puts("\n")
 	puts(colored.magenta('(Ha '+ str(total_points) + ' punti.)'))
