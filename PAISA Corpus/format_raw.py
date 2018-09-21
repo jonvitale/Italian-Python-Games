@@ -149,7 +149,7 @@ if os.path.isdir(foldername):
 
 				# ad-hoc dummies
 				conll >>= (mutate(
-						dfeature_dependency_ROOT = (X.dependency == 'ROOT').astype(int),					
+						dfeature_dependency_parent = (X.dependency == 'parent').astype(int),					
 						dfeature_dependency_aux = (X.dependency == 'aux').astype(int),
 						dfeature_prev1_dependency_aux = (lag(X.dependency, 1) == 'aux').astype(int),
 					)
@@ -180,14 +180,14 @@ if os.path.isdir(foldername):
 					next_vals = (conll['_target_start'] == ntargets).astype(int)
 					#print(next_vals[56:60])
 					if t == 0:
-						conll["targetFlag"] = list(next_vals)						
+						conll["target_flag"] = list(next_vals)						
 					else:
 						next_vals = [0] * t + list(next_vals)[:-t]
-						conll["targetFlag"] += next_vals
+						conll["target_flag"] += next_vals
 				
 				# keep only those target matches that also have the keep flag
 				for t in range(ntargets):
-					conll['target_'+str(t)] = conll['target_'+str(t)] * conll['targetFlag']
+					conll['target_'+str(t)] = conll['target_'+str(t)] * conll['target_flag']
 					conll = conll >> drop(X['_target_' + str(t)])
 
 				# finalize the conll dataframe (remove unneceasry)

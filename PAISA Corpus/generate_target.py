@@ -28,89 +28,63 @@ def re_search_any(series, pattern):
 			out.append(False)
 	return out
 
-@make_symbolic
-def concat_when(words, filter_vals = None, keep_val = None, replace_with = None, sep=' '):
-	''' This function concats strings from the words list on the occasion
-			that the value in filter_vals matches the value in keep_val,
-			if there is not a match then substitue with replace_with, unless None, then
-			simply do not add anything for the given index
-	'''
-	words = list(words)
-	if replace_with is None:
-		replace_with = ''
-	if filter_vals is None: 
-		keep_val = True
-	else:
-		filter_vals = list(filter_vals)
-	if filter_vals is None or len(words) == len(filter_vals):
-		string = ''
-		for i in range(len(words)):
-			string += sep if i > 0 \
-				and len(replace_with) > 0  \
-				else ''
-			if filter_vals is None or filter_vals[i] == keep_val:
-				string += str(words[i])
-			else:
-				# are we substituting the target word here
-				if re.search('{word}', replace_with):
-					temp_word = re.sub('{word}', words[i], replace_with)
-					string += temp_word
-				else:
-					string += replace_with
-		string = re.sub(r"(\w)' +(\w)", r"\1'\2", string)
-		string = re.sub(r' +([\.\?\])},;: ])', r'\1', string)
-		string = re.sub(r'([(\[\{]) +', r'\1', string)
-		string = re.sub(r'\s+', r' ', string)
-		return string
-	else:
-		print('Error:' + str(len(words)) + ' word values, but ' + str(len(filter_vals)) + ' filter values.')
-		return None
 
 @make_symbolic
-def pprint_passage(words_df, col_to_print, char_width = 12):
+def pprint_passage(words_df, col_to_print, char_width = 80):
 	# the unite function has a stray print, supress it (hopefully this can be changed)
-	num_tokens = max(words_df.TokenNum)
+	num_tokens = max(words_df.token_num)
 	sys.stdout = open(os.devnull, 'w')
+	words_df['To_Print'] = [re.sub(r'\s', ' ', s) for s in list(words_df[col_to_print])]
 	words_df >>= (
 		mutate(	
-			Sep = np_where((lead(X.CPOS) == 'F') & (lead(X[col_to_print]) != '(') | \
-				re_search_any(X[col_to_print], r".+?'$") \
+			sep = np_where((lead(X.cpos) == 'F') & (lead(X.To_Print) != '(') | \
+				re_search_any(X.To_Print, r".+?'$") \
 				, '', ' '),			
-		) >> unite('Word_Sep', [col_to_print, 'Sep'], remove=False, sep="")	>> 
+		) >> unite('word_sep', ['To_Print', 'sep'], remove=False, sep="")	>> 
 		mutate(
-			CharCount = nchar(X.Word_Sep)	
-		) >> mutate(
-			CharStart = cumsum(lag(X.CharCount))
-		)
+			char_count = nchar(X.word_sep)	
+		) 
 	)
-	words_df['CharStart'].fillna(0, inplace=True)	
-	words_df >>= mutate(CharStop = X.CharStart + X.CharCount)
-	words_df['LineNum'] = [math.floor(x / char_width) + 1 for x in words_df.CharStart]
-	
-	# add a newline after every last word
-	words_df >>= mutate(Overflow = char_width*X.LineNum - X.CharStop)
-	 #>> mutate(
-	#	NL = np_where((X.Overflow <= 0) & (X.TokenNum != num_tokens), '|\n', '')
-	#) >> unite('Word_Sep_NL', ['Word_Sep', 'NL'], remove=False, sep="")
-	
-	# what should we extend every end of line to?
-	words_df['Word_Sep_NL'] = words_df['Word_Sep']
-	max_overflow = max(-1 * words_df.Overflow)
 	sys.stdout = sys.__stdout__
-	for i in range(len(words_df)):		
-		if words_df.Overflow.iloc[i] <= 0:
-			words_df.Word_Sep_NL.iloc[i] += (" " * math.floor(max_overflow + words_df.Overflow.iloc[i])) + " |\n"
-			print(str(max_overflow) + ' + ' +str(words_df.Overflow.iloc[i]) + ' = ' + str(words_df.CharStop.iloc[i]) + " - " + str(words_df.Word_Sep_NL.iloc[i]))
-			
+	# to get lines we need to iterate through the dataframe, finding groups of characters <= char_width
+	char_count = 0
+	line_num = 1
+	words_df['char_start'] = 0
+	words_df['char_stop'] = 0
+	words_df['line_num'] = line_num
+	words_df['word_sep_nl'] = words_df['word_sep']
+	for i, row in words_df.iterrows():
+		#print(i)
+		# start a new line?
+		if char_count + words_df.loc[i,'char_count'] > char_width:
+			char_count = 0
+			line_num += 1
 
-	print(words_df)
-	puts(colored.black(' __________________________________________________________________'))
+			# update the previous line
+			previous_text = words_df.loc[i-1, 'word_sep_nl']
+			buffer_text = (" " * math.floor(char_width - words_df.loc[i-1,'char_stop'] )) + "|\n"
+			words_df.loc[i-1, 'word_sep_nl'] = previous_text + buffer_text
+
+		words_df.loc[i, 'char_start'] = char_count
+		char_count += words_df.loc[i,'char_count']
+		words_df.loc[i,'line_num'] = line_num
+		words_df.loc[i,'char_stop'] = char_count
+
+	# update the final line
+	#i = len(words_df)
+	previous_text = words_df.loc[i-1, 'word_sep_nl']
+	buffer_text = (" " * math.floor(char_width - words_df.loc[i-1,'char_stop'] )) + "|\n"
+	words_df.loc[i-1, 'word_sep_nl'] = previous_text + buffer_text
+	
+	
+	#0print(words_df >> select(['word_sep_nl', 'char_count', 'char_start', 'char_stop', 'line_num']))
+	puts(colored.black(' ' + ('_' * (char_width+1))))
 	with indent(2, quote='|'):
-		puts(colored.black(words_df.Word_Sep_NL.str.cat(sep='')))
-	puts(colored.black(' __________________________________________________________________'))
+		puts(colored.black(words_df.word_sep_nl.str.cat(sep='')))
+	puts(colored.black(' ' + ('_' * (char_width+1))))
 	
 	# remove fields created here
-	words_df >>= drop(['Sep', 'CharCount', 'CharStart','CharStop', 'LineNum', 'Word_Sep', 'Word_Sep_NL'])
+	words_df >>= drop(['To_Print', 'sep', 'char_count', 'char_start','char_stop', 'line_num', 'word_sep', 'word_sep_nl'])
 	
 
 def pprint_wiktionary(word):
@@ -171,24 +145,18 @@ total_points = 0
 
 #program loop
 while True:
-	passage_num = np.random.randint(min(words_df.PassageNum) + 1, max(words_df.PassageNum)-1)
-	words_passage_df = words_df >> mask(X.PassageNum == passage_num)
-	
-	#print(words_passage_df >> select(X.Word, X.Word_Sep, X.CharCount, X.CharStart))
-
-	#print(words_passage_df >> unite('Word_CPOS', ['Word_Sep', 'CPOS'], remove=False, sep="")	>> select(X.Word_CPOS, X.char_count_cum))
-	#passage_no_target = concat_when(words_passage_df['Word_Sep'], words_passage_df['TargetFlag'], 0, '*___* ', sep="")		
-	#passage_no_target = re.sub("(.{64})", r"\1 |\n", passage_no_target, 0, re.DOTALL)
-	#target = passage_row['Target']
+	passage_num = np.random.randint(min(words_df.passage_num) + 1, max(words_df.passage_num)-1)
+	words_passage_df = words_df >> mask(X.passage_num == passage_num)
 	
 	words_passage_df >>= mutate(
-			Words_no_target = np_where(X.TargetFlag == 1, '*___*', X.Word))
-
+		words_no_target = np_where(X.target_flag == 1, '*___*', X.word),
+		words_bold_target = np_where(X.target_flag == 1, '*' + X.word + '*', X.word)
+	)
 	# Passage loop
 	while True:
 		break_all = False
 		# replace the target words with *___*
-		pprint_passage(words_passage_df, 'Words_no_target')
+		pprint_passage(words_passage_df, 'words_no_target')
 		
 		
 		puts(colored.black('\nInserisci le parole corrette per *___*. (e` → è, e^ → é) \
@@ -207,23 +175,25 @@ while True:
 		if user_words == '0':
 			break_all = True
 			break;
+		elif user_words == 'debug':
+			print(words_passage_df)
 		elif user_words[0] == "?":
 			pprint_wiktionary(user_words[1:])
 		else:
 			points = 0
 			user_words = user_words.split()
-			target_words_df = words_passage_df >> mask(X.TargetFlag == 1)
+			target_words_df = words_passage_df >> mask(X.target_flag == 1)
 			for i in range(len(user_words)):
 				user_word = user_words[i]
-				target_word = target_words_df['Word'].iloc[i]
-				target_lemma = target_words_df['Lemma'].iloc[i]
-				target_cpos = target_words_df['CPOS'].iloc[i]
+				target_word = target_words_df['word'].iloc[i]
+				target_lemma = target_words_df['lemma'].iloc[i]
+				target_cpos = target_words_df['cpos'].iloc[i]
 				target_lemma_cpos = target_lemma + "|" + target_cpos
 				# get all instances of the words df that match the user's word, used to find lemma-cpos
-				lemma_cposs = list(words_df >> mask(X.Word == user_word) >> 
-					distinct(X.Word, X.Lemma, X.CPOS) >>
-					mutate(Lemma_CPOS = X.Lemma + "|" + X.CPOS) >>
-					pull('Lemma_CPOS')
+				lemma_cposs = list(words_df >> mask(X.word == user_word) >> 
+					distinct(X.word, X.lemma, X.cpos) >>
+					mutate(lemma_cpos = X.lemma + "|" + X.cpos) >>
+					pull('lemma_cpos')
 				)
 				if user_word == target_word:
 					points += 3
@@ -240,9 +210,6 @@ while True:
 			break
 	if break_all:
 		break
-	passage = concat_when(words_passage_df['Word'], words_passage_df['TargetFlag'], 0, '*{word}*')		
-	passage = re.sub("(.{64})", r"\1 |\n", passage, 0, re.DOTALL)
-	with indent(2, quote='|'):
-		puts(colored.black(passage))
-	puts("\n")
+	
+	pprint_passage(words_passage_df, 'words_bold_target')
 	puts(colored.magenta('(Ha '+ str(total_points) + ' punti.)'))
