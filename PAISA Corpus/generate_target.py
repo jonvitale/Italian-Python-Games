@@ -8,8 +8,6 @@ from dfply import *
 from clint.textui import puts, indent, colored, prompt, validators
 from wiktionaryparser import WiktionaryParser
 
-from googletrans import Translator
-# make sure hyper is installed
 
 
 @make_symbolic
@@ -144,7 +142,6 @@ foldername = arg_parser.parse_args().data_folder[0]
 words_df = pd.read_csv(foldername + '/data/words.csv', encoding="utf-8")
 
 total_points = 0
-translator = Translator()
 
 #program loop
 while True:
