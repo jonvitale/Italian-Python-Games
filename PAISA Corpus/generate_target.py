@@ -1,5 +1,6 @@
 #coding: utf-8
 import os, sys, math, re
+
 import argparse
 import pandas as pd
 import numpy as np
@@ -7,6 +8,8 @@ from dfply import *
 from clint.textui import puts, indent, colored, prompt, validators
 from wiktionaryparser import WiktionaryParser
 
+from googletrans import Translator
+# make sure hyper is installed
 
 
 @make_symbolic
@@ -76,16 +79,15 @@ def pprint_passage(words_df, col_to_print, char_width = 80):
 	buffer_text = (" " * math.floor(char_width - words_df.loc[i-1,'char_stop'] )) + "|\n"
 	words_df.loc[i-1, 'word_sep_nl'] = previous_text + buffer_text
 	
-	
-	#0print(words_df >> select(['word_sep_nl', 'char_count', 'char_start', 'char_stop', 'line_num']))
+	final_words = words_df.word_sep_nl.str.cat(sep='')
 	puts(colored.black(' ' + ('_' * (char_width+1))))
 	with indent(2, quote='|'):
-		puts(colored.black(words_df.word_sep_nl.str.cat(sep='')))
+		puts(colored.black(final_words))
 	puts(colored.black(' ' + ('_' * (char_width+1))))
 	
 	# remove fields created here
 	words_df >>= drop(['To_Print', 'sep', 'char_count', 'char_start','char_stop', 'line_num', 'word_sep', 'word_sep_nl'])
-	
+	return final_words
 
 def pprint_wiktionary(word):
 	#try:
@@ -142,6 +144,7 @@ foldername = arg_parser.parse_args().data_folder[0]
 words_df = pd.read_csv(foldername + '/data/words.csv', encoding="utf-8")
 
 total_points = 0
+translator = Translator()
 
 #program loop
 while True:
@@ -156,12 +159,14 @@ while True:
 	while True:
 		break_all = False
 		# replace the target words with *___*
-		pprint_passage(words_passage_df, 'words_no_target')
+		passage_no_target = pprint_passage(words_passage_df, 'words_no_target')		
 		
-		
-		puts(colored.black('\nInserisci le parole corrette per *___*. (e` → è, e^ → é) \
-			\n?parole per aiuto	\
-			\n0 per uscire\n'))
+		puts(colored.black('''
+			Inserisci le parole corrette per *___*. (e` → è, e^ → é)
+			?parole per aiuto
+			trad paroli... (tradurre paroli) o trad (tradurre tutti)
+			0 per uscire
+			'''))
 		with indent(4, quote=' >'):
 			user_words = prompt.query('>>> ')
 		# replace o` with ò, replace e` with è, a` with à
@@ -179,6 +184,11 @@ while True:
 			print(words_passage_df)
 		elif user_words[0] == "?":
 			pprint_wiktionary(user_words[1:])
+		elif user_words[0:4] == 'trad':
+			if len(user_words) > 5:
+				print(translator.translate(user_words[5:]))
+			else:
+				print(translator.translate(passage_no_target))
 		else:
 			points = 0
 			user_words = user_words.split()
