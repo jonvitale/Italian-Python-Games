@@ -147,26 +147,50 @@ if os.path.isdir(foldername):
 
 				# figure out which columns match the targets and if they also match the next
 				for t in range(ntargets):
-					conll['target_'+str(t)] = (conll['word'] == conll["_target_"+str(t)]).astype(int)
+					conll['_target_flag_'+str(t)] = (conll['word'] == conll["_target_"+str(t)]).astype(int)
 					if t == 0:
-						conll['_target_start'] = list(conll['target_'+str(t)])	
+						conll['_target_start'] = list(conll['_target_flag_'+str(t)])	
 					else:
-						conll['_target_start'] += list(conll['target_'+str(t)] [t:]) + [0] * t	
+						conll['_target_start'] += list(conll['_target_flag_'+str(t)] [t:]) + [0] * t	
 
 				# keep only those matches in which the _target_start value matches the number of targets
 				for t in range(ntargets):
 					next_vals = (conll['_target_start'] == ntargets).astype(int)
 					#print(next_vals[56:60])
 					if t == 0:
-						conll["target_flag"] = list(next_vals)						
+						conll["_target_flag"] = list(next_vals)						
 					else:
 						next_vals = [0] * t + list(next_vals)[:-t]
-						conll["target_flag"] += next_vals
+						conll["_target_flag"] += next_vals
 				
+				# there may be multiple sets of the target, keep only the first
+				conll['target_flag'] = 0
+				for t in range(ntargets):
+					conll >>= left_join(conll >>
+						group_by(X.passage_num) >>
+						mask((X['_target_flag_'+str(t)] == 1) & (X._target_flag == 1)) >>
+						summarize(
+							token_num = last(X.token_num),
+							
+						) >>
+						mutate(
+							is_final_token = 1
+						)
+					)
+
+					conll.loc[:, 'is_final_token'] = np.where(conll.loc[:, 'is_final_token'] == 1, 1, 0)
+					conll['target_flag_' + str(t)] = conll['_target_flag_' + str(t)] * conll.loc[:, 'is_final_token']
+					conll['target_flag'] = conll['target_flag']  | conll['target_flag_' + str(t)]
+					conll = conll.drop(columns = ['is_final_token', '_target_flag_' + str(t)])
+
+				conll = conll.drop(columns = ['_target_flag'])
+				'''	
 				# keep only those target matches that also have the keep flag
 				for t in range(ntargets):
-					conll['target_'+str(t)] = conll['target_'+str(t)] * conll['target_flag']
+					conll['target_flag_'+str(t)] = conll['target_flag_'+str(t)] * conll['target_flag']
 					conll = conll >> drop(X['_target_' + str(t)])
+				'''
+				
 
 				# finalize the conll dataframe (remove unneceasry)
 				conll >>= drop(X._target_start)

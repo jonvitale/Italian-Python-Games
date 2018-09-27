@@ -49,7 +49,11 @@ def concat_when(words, filter_vals = None, keep_val = None, replace_with = None,
 
 @make_symbolic
 def _int(X):
-	return [int(x) for x in X]
+	try:
+		return [int(x) for x in list(X)]
+	except:
+		print("ERROR")
+		print(X)
 
 '''
 BEGIN SCRIPT
@@ -65,7 +69,7 @@ words_df = pd.read_csv(foldername + '/data/words.csv', encoding="utf-8")
 
 # get just the targets of the words_df 
 targets = (words_df >>
-	select(contains('target_'), ~X.target_flag)
+	select(contains('target_flag_'), ~X.target_flag)
 )
 
 ntargets = len(targets.columns)
@@ -77,10 +81,10 @@ passages = (words_df >> group_by(X.passage_num) >> summarize(
 
 for t in range(ntargets):
 	passages >>= left_join(words_df >> group_by(X.passage_num) >> summarize(
-		target_word_temp = concat_when(X.word, X['target_' + str(t)], 1),
-		target_lemma_temp = concat_when(X.lemma, X['target_' + str(t)], 1),
-		target_pos_temp = concat_when(X.pos, X['target_' + str(t)], 1),
-		target_cpos_temp = concat_when(X.cpos, X['target_' + str(t)], 1),
+		target_word_temp = concat_when(X.word, X['target_flag_' + str(t)], 1),
+		target_lemma_temp = concat_when(X.lemma, X['target_flag_' + str(t)], 1),
+		target_pos_temp = concat_when(X.pos, X['target_flag_' + str(t)], 1),
+		target_cpos_temp = concat_when(X.cpos, X['target_flag_' + str(t)], 1),
 	))
 	passages = passages.rename(columns = { \
 		'target_word_temp': 'target_' + str(t) + '_word', \
@@ -93,10 +97,15 @@ for t in range(ntargets):
 auto_features = ['num_children', 'num_distinct_child_cpos']
 for feat in auto_features:
 	for t in range(ntargets):
-		passages >>= left_join(words_df >> group_by(X.passage_num) >> summarize(
-			_feat = _int(concat_when(X[feat], X['target_' + str(t)], 1))
-		))
-		passages = passages.rename(columns = { \
+		passages >>= left_join(words_df >>
+			group_by(X.passage_num) >> 
+			summarize(
+				_feat = concat_when(X[feat], X['target_flag_' + str(t)], 1)
+			)
+		)
+		# make these features an int
+		passages.loc[:,'_feat'] = passages.loc[:,'_feat'].astype(float).astype(int)
+		passages = passages.rename(columns = {
 			'_feat': 'target_'+ str(t) + '_' + feat, 
 		})
 
@@ -106,19 +115,19 @@ passages >>= (
 	left_join(words_df >> 
 		group_by(X.passage_num) >> 
 		summarize(
-			target_0_num = concat_when(X['feature_num'], X['target_0'], 1),
-			target_0_ten = concat_when(X['feature_ten'], X['target_0'], 1),
-			target_0_per = concat_when(X['feature_per'], X['target_0'], 1),
-			target_1_num = concat_when(X['feature_num'], X['target_1'], 1),
-			target_1_gen = concat_when(X['feature_gen'], X['target_1'], 1),
+			target_0_num = concat_when(X['feature_num'], X['target_flag_0'], 1),
+			target_0_ten = concat_when(X['feature_ten'], X['target_flag_0'], 1),
+			target_0_per = concat_when(X['feature_per'], X['target_flag_0'], 1),
+			target_1_num = concat_when(X['feature_num'], X['target_flag_1'], 1),
+			target_1_gen = concat_when(X['feature_gen'], X['target_flag_1'], 1),
 			#predictors
 			#is the firs word an auxilary verb
-			target_0_prev1_dependency_aux = concat_when(X['dfeature_prev1_dependency_aux'], X['target_0'], 1),
+			target_0_prev1_dependency_aux = concat_when(X['dfeature_prev1_dependency_aux'], X['target_flag_0'], 1),
 		)
 	) >> mutate(
 		target_1_lemma_di = (X.target_1_lemma == 'di').astype(int),
 		target_1_lemma_da = (X.target_1_lemma == 'da').astype(int),
-		target_1_lemma_a = (X.target_1_lemma == 'a' | X.target_1_lemma == 'al').astype(int),
+		target_1_lemma_a = ((X.target_1_lemma == 'a') | (X.target_1_lemma == 'al')).astype(int),
 		target_1_lemma_in = (X.target_1_lemma == 'in').astype(int),
 	)
 )
