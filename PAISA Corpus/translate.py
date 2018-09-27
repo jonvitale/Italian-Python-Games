@@ -1,6 +1,17 @@
 # -*- coding: utf-8 -*-
 
 import http.client, urllib.parse, uuid, json
+import sys
+import os
+d = os.path.dirname(os.getcwd())
+
+sys.path.insert(0, d)
+print(d)
+
+#import creds
+#print(d)
+
+#print(ms_translate_key)
 
 # **********************************************
 # *** Update or verify the following values. ***
