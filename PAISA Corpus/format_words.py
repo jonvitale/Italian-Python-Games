@@ -39,14 +39,14 @@ def re_search_group(series, pattern, group = None):
 		out.append(n)
 	return out
 
-conll_names = ['token_num', "word", "lemma", "cpos", "pos", "features", "parent", "dependency", "X1", "X2"]
+words_df_names = ['token_num', "word", "lemma", "cpos", "pos", "features", "parent", "dependency", "X1", "X2"]
 
 if os.path.isdir(foldername):
 	# we should have matching files in a conll and a kwic directory, make sure they are both there
 	if "conll" in os.listdir(foldername + "/data") and "kwic" in os.listdir(foldername + "/data"):
-		conll_files = os.listdir(foldername + "/data/conll")
+		words_df_files = os.listdir(foldername + "/data/conll")
 		kwic_files = os.listdir(foldername + "/data/kwic")
-		match_files = list(set(conll_files) & set(kwic_files))
+		match_files = list(set(words_df_files) & set(kwic_files))
 		if len(match_files) > 0:
 			for f in match_files:
 				filename = foldername + "/data/kwic/" + f
@@ -68,14 +68,14 @@ if os.path.isdir(foldername):
 				filename = foldername + "/data/conll/" + f
 				# quoting=3 means no interpreting anything as quotes. This is important when a quote symbol is
 				# the word and lemma (otherwise it thinks that there is text like " \t " instead of quote delimiter quote)
-				conll = pd.read_csv(filename, sep = "\t", encoding="utf-8", header=None, names=conll_names,
+				words_df = pd.read_csv(filename, sep = "\t", encoding="utf-8", header=None, names=words_df_names,
 					quoting=3)
 				
-				conll >>= (
+				words_df >>= (
 					drop(X.X1, X.X2) >>
 					mutate(
 						passage_num = cumsum((X.token_num == 1).astype(int)),
-						# features from conll
+						# features from words_df
 						feature_gen = re_search_group(X.features, r'gen=(\w+)?\|', 1),
 						feature_mod = re_search_group(X.features, r'mod=(\w+)?\|', 1),
 						feature_num = re_search_group(X.features, r'num=(\w+)?\|', 1),
@@ -87,8 +87,8 @@ if os.path.isdir(foldername):
 				)
 
 				# For each head, get all dependencies in a list (| separated)
-				conll >>= (
-					left_join(conll >> (
+				words_df >>= (
+					left_join(words_df >> (
 							mutate(
 								parent = X.parent.astype(int),
 								token_num = X.token_num.astype(str)
@@ -106,7 +106,7 @@ if os.path.isdir(foldername):
 					)
 				)
 				# fill in missing values count values with 0's
-				conll >>= (
+				words_df >>= (
 					mutate(
 						num_children = np_where(X.num_children >= 0, X.num_children, 0),
 						num_distinct_child_cpos = np_where(X.num_distinct_child_cpos >= 0, X.num_distinct_child_cpos, 0),
@@ -114,19 +114,19 @@ if os.path.isdir(foldername):
 				)
 				
 				# turn categorical into dummy
-				conll = pd.concat([conll, pd.get_dummies(conll['feature_gen'], prefix='dfeature_gen')],
-						axis=1, join_axes=[conll.index])
-				conll = pd.concat([conll, pd.get_dummies(conll['feature_mod'], prefix='dfeature_mod')],
-						axis=1, join_axes=[conll.index])
-				conll = pd.concat([conll, pd.get_dummies(conll['feature_num'], prefix='dfeature_num')],
-						axis=1, join_axes=[conll.index])
-				conll = pd.concat([conll, pd.get_dummies(conll['feature_per'], prefix='dfeature_per')],
-						axis=1, join_axes=[conll.index])
-				conll = pd.concat([conll, pd.get_dummies(conll['feature_ten'], prefix='dfeature_ten')],
-						axis=1, join_axes=[conll.index])
+				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_gen'], prefix='dfeature_gen')],
+						axis=1, join_axes=[words_df.index])
+				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_mod'], prefix='dfeature_mod')],
+						axis=1, join_axes=[words_df.index])
+				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_num'], prefix='dfeature_num')],
+						axis=1, join_axes=[words_df.index])
+				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_per'], prefix='dfeature_per')],
+						axis=1, join_axes=[words_df.index])
+				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_ten'], prefix='dfeature_ten')],
+						axis=1, join_axes=[words_df.index])
 
 				# ad-hoc dummies
-				conll >>= (mutate(
+				words_df >>= (mutate(
 						dfeature_dependency_parent = (X.dependency == 'parent').astype(int),					
 						dfeature_dependency_aux = (X.dependency == 'aux').astype(int),
 						dfeature_prev1_dependency_aux = (lag(X.dependency, 1) == 'aux').astype(int),
@@ -134,10 +134,10 @@ if os.path.isdir(foldername):
 				)
 
 				# get the list of dummy features, we will need this for our learning model
-				dummy_features = list(filter(re.compile('dfeature').search, conll.columns.tolist()))				
+				dummy_features = list(filter(re.compile('dfeature').search, words_df.columns.tolist()))				
 				
-				conll >>= (
-					left_join(conll >> 
+				words_df >>= (
+					left_join(words_df >> 
 						group_by(X.passage_num) >> 
 						summarize(passage_length = n(X.passage_num))
 					) >> mutate(
@@ -147,26 +147,26 @@ if os.path.isdir(foldername):
 
 				# figure out which columns match the targets and if they also match the next
 				for t in range(ntargets):
-					conll['_target_flag_'+str(t)] = (conll['word'] == conll["_target_"+str(t)]).astype(int)
+					words_df['_target_flag_'+str(t)] = (words_df['word'] == words_df["_target_"+str(t)]).astype(int)
 					if t == 0:
-						conll['_target_start'] = list(conll['_target_flag_'+str(t)])	
+						words_df['_target_start'] = list(words_df['_target_flag_'+str(t)])	
 					else:
-						conll['_target_start'] += list(conll['_target_flag_'+str(t)] [t:]) + [0] * t	
+						words_df['_target_start'] += list(words_df['_target_flag_'+str(t)] [t:]) + [0] * t	
 
 				# keep only those matches in which the _target_start value matches the number of targets
 				for t in range(ntargets):
-					next_vals = (conll['_target_start'] == ntargets).astype(int)
+					next_vals = (words_df['_target_start'] == ntargets).astype(int)
 					#print(next_vals[56:60])
 					if t == 0:
-						conll["_target_flag"] = list(next_vals)						
+						words_df["_target_flag"] = list(next_vals)						
 					else:
 						next_vals = [0] * t + list(next_vals)[:-t]
-						conll["_target_flag"] += next_vals
+						words_df["_target_flag"] += next_vals
 				
 				# there may be multiple sets of the target, keep only the first
-				conll['target_flag'] = 0
+				words_df['target_flag'] = 0
 				for t in range(ntargets):
-					conll >>= left_join(conll >>
+					words_df >>= left_join(words_df >>
 						group_by(X.passage_num) >>
 						mask((X['_target_flag_'+str(t)] == 1) & (X._target_flag == 1)) >>
 						summarize(
@@ -178,36 +178,36 @@ if os.path.isdir(foldername):
 						)
 					)
 
-					conll.loc[:, 'is_final_token'] = np.where(conll.loc[:, 'is_final_token'] == 1, 1, 0)
-					conll['target_flag_' + str(t)] = conll['_target_flag_' + str(t)] * conll.loc[:, 'is_final_token']
-					conll['target_flag'] = conll['target_flag']  | conll['target_flag_' + str(t)]
-					conll = conll.drop(columns = ['is_final_token', '_target_flag_' + str(t)])
+					words_df.loc[:, 'is_final_token'] = np.where(words_df.loc[:, 'is_final_token'] == 1, 1, 0)
+					words_df['target_flag_' + str(t)] = words_df['_target_flag_' + str(t)] * words_df.loc[:, 'is_final_token']
+					words_df['target_flag'] = words_df['target_flag']  | words_df['target_flag_' + str(t)]
+					print(t)
+					print(words_df.columns)
+					words_df >>= drop(['is_final_token', '_target_flag_' + str(t)])
 
-				conll = conll.drop(columns = ['_target_flag'])
+				words_df >>= drop(['_target_flag', '_target_start'])
 				'''	
 				# keep only those target matches that also have the keep flag
 				for t in range(ntargets):
-					conll['target_flag_'+str(t)] = conll['target_flag_'+str(t)] * conll['target_flag']
-					conll = conll >> drop(X['_target_' + str(t)])
+					words_df['target_flag_'+str(t)] = words_df['target_flag_'+str(t)] * words_df['target_flag']
+					words_df = words_df >> drop(X['_target_' + str(t)])
 				'''
 				
 
-				# finalize the conll dataframe (remove unneceasry)
-				conll >>= drop(X._target_start)
 				# put passage_num in front
-				cols = conll.columns.tolist()
+				cols = words_df.columns.tolist()
 				cols.remove('passage_num')
 				cols = ['passage_num'] + cols
-				conll = conll[cols]
+				words_df = words_df[cols]
 				
-				conll.to_csv(foldername + '/data/words.csv', index=False, encoding='utf-8')
+				words_df.to_csv(foldername + '/data/words.csv', index=False, encoding='utf-8')
 			
 			with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-				print(conll[80:90])
+				print(words_df[80:90])
 
 		else:
-			print("There are no conll and kwic files that match")
+			print("There are no words_df and kwic files that match")
 	else:
-		print("you need conll and kwic sub-folders here with matching files")
+		print("you need words_df and kwic sub-folders here with matching files")
 else:
 	print(foldername + "does not exist.")

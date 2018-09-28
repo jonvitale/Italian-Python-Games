@@ -6,7 +6,7 @@ import re
 import argparse
 import pandas as pd
 import numpy as np
-from dfply import *
+#from dfply import *
 from sklearn import cluster
 
 parser = argparse.ArgumentParser(description='Enter folder name that contains a data folder with the passages.csv file.')
@@ -24,10 +24,9 @@ if method == 'nb':
 	from sklearn.naive_bayes import MultinomialNB
 
 	target_name = 'target_1_lemma_di'
-	target = X[target_name]
-	predictors = (passages_df >> 
-		select(contains('child'), contains('prev'))
-	)
+	target = passages_df[target_name]
+
+	predictors = passages_df.filter(regex='child|prev')
 
 	print('target:', target_name)
 	print('predictors:', predictors.columns)
