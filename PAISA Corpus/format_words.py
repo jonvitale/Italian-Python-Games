@@ -70,72 +70,18 @@ if os.path.isdir(foldername):
 				# the word and lemma (otherwise it thinks that there is text like " \t " instead of quote delimiter quote)
 				words_df = pd.read_csv(filename, sep = "\t", encoding="utf-8", header=None, names=words_df_names,
 					quoting=3)
-				
-				words_df >>= (
-					drop(X.X1, X.X2) >>
-					mutate(
-						passage_num = cumsum((X.token_num == 1).astype(int)),
-						# features from words_df
-						feature_gen = re_search_group(X.features, r'gen=(\w+)?\|', 1),
-						feature_mod = re_search_group(X.features, r'mod=(\w+)?\|', 1),
-						feature_num = re_search_group(X.features, r'num=(\w+)?\|', 1),
-						feature_per = re_search_group(X.features, r'per=(\w+)?\|', 1),
-						feature_ten = re_search_group(X.features, r'ten=(\w+)?\|', 1)
-					) >>
-					# add each and all targets 
-					left_join(targets)
-				)
 
-				# For each head, get all dependencies in a list (| separated)
-				words_df >>= (
-					left_join(words_df >> (
-							mutate(
-								parent = X.parent.astype(int),
-								token_num = X.token_num.astype(str)
-							) >>
-							mask(X.parent != 0) >>
-							group_by(X.passage_num, X.parent) >>
-							summarize(
-								children = X.token_num.str.cat(sep = '|'),
-								num_children = n_distinct(X.token_num),
-								num_distinct_child_cpos = n_distinct(X.cpos)
-							) >>
-							select(X.passage_num, X.parent, X.children, X.num_children, X.num_distinct_child_cpos) >>
-							rename(token_num = X.parent)
-						)
-					)
-				)
-				# fill in missing values count values with 0's
-				words_df >>= (
-					mutate(
-						num_children = np_where(X.num_children >= 0, X.num_children, 0),
-						num_distinct_child_cpos = np_where(X.num_distinct_child_cpos >= 0, X.num_distinct_child_cpos, 0),
-					)
-				)
-				
-				# turn categorical into dummy
-				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_gen'], prefix='dfeature_gen')],
-						axis=1, join_axes=[words_df.index])
-				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_mod'], prefix='dfeature_mod')],
-						axis=1, join_axes=[words_df.index])
-				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_num'], prefix='dfeature_num')],
-						axis=1, join_axes=[words_df.index])
-				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_per'], prefix='dfeature_per')],
-						axis=1, join_axes=[words_df.index])
-				words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_ten'], prefix='dfeature_ten')],
-						axis=1, join_axes=[words_df.index])
 
-				# ad-hoc dummies
-				words_df >>= (mutate(
-						dfeature_dependency_parent = (X.dependency == 'parent').astype(int),					
-						dfeature_dependency_aux = (X.dependency == 'aux').astype(int),
-						dfeature_prev1_dependency_aux = (lag(X.dependency, 1) == 'aux').astype(int),
-					)
-				)
+				words_df >>= drop(X.X1, X.X2)
+				# add a passage number key then join targets
+				words_df >>= mutate(passage_num = cumsum((X.token_num == 1).astype(int))) >> left_join(targets)
+				# put passage_num in front
+				cols = words_df.columns.tolist()
+				cols.remove('passage_num')
+				cols = ['passage_num'] + cols
+				words_df = words_df[cols]
 
-				# get the list of dummy features, we will need this for our learning model
-				dummy_features = list(filter(re.compile('dfeature').search, words_df.columns.tolist()))				
-				
+				# flag the last token of the passage
 				words_df >>= (
 					left_join(words_df >> 
 						group_by(X.passage_num) >> 
@@ -145,6 +91,8 @@ if os.path.isdir(foldername):
 					) >> drop(X.passage_length)
 				)
 
+				# process targets
+				
 				# figure out which columns match the targets and if they also match the next
 				for t in range(ntargets):
 					words_df['_target_flag_'+str(t)] = (words_df['word'] == words_df["_target_"+str(t)]).astype(int)
@@ -194,11 +142,79 @@ if os.path.isdir(foldername):
 				'''
 				
 
-				# put passage_num in front
-				cols = words_df.columns.tolist()
-				cols.remove('passage_num')
-				cols = ['passage_num'] + cols
-				words_df = words_df[cols]
+
+
+				# For each head, get all dependencies in a list (| separated)
+				words_df >>= (
+					left_join(words_df >> (
+							mutate(
+								parent = X.parent.astype(int),
+								token_num = X.token_num.astype(str)
+							) >>
+							mask(X.parent != 0) >>
+							group_by(X.passage_num, X.parent) >>
+							summarize(
+								children = X.token_num.str.cat(sep = '|'),
+								num_children = n_distinct(X.token_num),
+								num_distinct_child_cpos = n_distinct(X.cpos)
+							) >>
+							select(X.passage_num, X.parent, X.children, X.num_children, X.num_distinct_child_cpos) >>
+							rename(token_num = X.parent)
+						)
+					)
+				)
+				# fill in missing values count values with 0's
+				words_df >>= (
+					mutate(
+						num_children = np_where(X.num_children >= 0, X.num_children, 0),
+						num_distinct_child_cpos = np_where(X.num_distinct_child_cpos >= 0, X.num_distinct_child_cpos, 0),
+					)
+				)
+
+				# for each token get next and previous cpos
+				words_df >>= (
+					mutate(
+						feature_cpos_next1 = lead(X.cpos),
+						feature_cpos_prev1 = lag(X.cpos), 
+					)
+				)
+
+				#### add other, ad-hoc important features
+				words_df >>= (
+					mutate(
+						# features from words_df
+						feature_gen = re_search_group(X.features, r'gen=(\w+)?\|', 1),
+						feature_mod = re_search_group(X.features, r'mod=(\w+)?\|', 1),
+						feature_num = re_search_group(X.features, r'num=(\w+)?\|', 1),
+						feature_per = re_search_group(X.features, r'per=(\w+)?\|', 1),
+						feature_ten = re_search_group(X.features, r'ten=(\w+)?\|', 1)
+					) 
+				)
+
+				features_to_dummy = ['feature_gen', 'feature_mod', 'feature_num', 'feature_per', 'feature_ten', \
+														 'feature_cpos_next1', 'feature_cpos_prev1']
+				
+				# turn categorical into dummy
+				for feat in features_to_dummy:
+					words_df = pd.concat([words_df, pd.get_dummies(words_df[feat], prefix='d' + feat)],
+						axis=1, join_axes=[words_df.index])
+				
+
+				# words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_gen'], prefix='dfeature_gen')],
+				# 		axis=1, join_axes=[words_df.index])
+				# words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_mod'], prefix='dfeature_mod')],
+				# 		axis=1, join_axes=[words_df.index])
+				# words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_num'], prefix='dfeature_num')],
+				# 		axis=1, join_axes=[words_df.index])
+				# words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_per'], prefix='dfeature_per')],
+				# 		axis=1, join_axes=[words_df.index])
+				# words_df = pd.concat([words_df, pd.get_dummies(words_df['feature_ten'], prefix='dfeature_ten')],
+				# 		axis=1, join_axes=[words_df.index])
+
+
+				
+
+				
 				
 				words_df.to_csv(foldername + '/data/words.csv', index=False, encoding='utf-8')
 			

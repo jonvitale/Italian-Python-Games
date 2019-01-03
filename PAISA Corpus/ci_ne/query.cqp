@@ -1,0 +1,5 @@
+ // conll
+ [lemma="(ci|ne)"] cut 5000 expand left to 2s
+
+ // kwic
+  [lemma="(ci|ne)"] cut 5000

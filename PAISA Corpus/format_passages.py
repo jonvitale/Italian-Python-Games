@@ -67,6 +67,20 @@ foldername = parser.parse_args().data_folder[0]
 
 words_df = pd.read_csv(foldername + '/data/words.csv', encoding="utf-8")
 
+### add some more features to the words_df
+# ad-hoc dummies
+words_df >>= (mutate(
+		dfeature_dependency_parent = (X.dependency == 'parent').astype(int),					
+		dfeature_dependency_aux = (X.dependency == 'aux').astype(int),
+		dfeature_prev1_dependency_aux = (lag(X.dependency, 1) == 'aux').astype(int),
+	)
+)
+
+# get the list of dummy features, we will need this for our learning model
+dummy_features = list(filter(re.compile('dfeature').search, words_df.columns.tolist()))				
+				
+
+
 # get just the targets of the words_df 
 targets = (words_df >>
 	select(contains('target_flag_'), ~X.target_flag)
@@ -94,7 +108,7 @@ for t in range(ntargets):
 	})
 
 # a set of features from words_df that will be applied to both targets
-auto_features = ['num_children', 'num_distinct_child_cpos']
+auto_features = ['num_children', 'num_distinct_child_cpos'] + dummy_features
 for feat in auto_features:
 	for t in range(ntargets):
 		passages >>= left_join(words_df >>
@@ -111,26 +125,26 @@ for feat in auto_features:
 
 
 # a curated, hand-crafted, artisanal, small-batch set of sentence-level features from words
-passages >>= (
-	left_join(words_df >> 
-		group_by(X.passage_num) >> 
-		summarize(
-			target_0_num = concat_when(X['feature_num'], X['target_flag_0'], 1),
-			target_0_ten = concat_when(X['feature_ten'], X['target_flag_0'], 1),
-			target_0_per = concat_when(X['feature_per'], X['target_flag_0'], 1),
-			target_1_num = concat_when(X['feature_num'], X['target_flag_1'], 1),
-			target_1_gen = concat_when(X['feature_gen'], X['target_flag_1'], 1),
-			#predictors
-			#is the firs word an auxilary verb
-			target_0_prev1_dependency_aux = concat_when(X['dfeature_prev1_dependency_aux'], X['target_flag_0'], 1),
-		)
-	) >> mutate(
-		target_1_lemma_di = (X.target_1_lemma == 'di').astype(int),
-		target_1_lemma_da = (X.target_1_lemma == 'da').astype(int),
-		target_1_lemma_a = ((X.target_1_lemma == 'a') | (X.target_1_lemma == 'al')).astype(int),
-		target_1_lemma_in = (X.target_1_lemma == 'in').astype(int),
-	)
-)
+# passages >>= (
+# 	left_join(words_df >> 
+# 		group_by(X.passage_num) >> 
+# 		summarize(
+# 			target_0_num = concat_when(X['feature_num'], X['target_flag_0'], 1),
+# 			target_0_ten = concat_when(X['feature_ten'], X['target_flag_0'], 1),
+# 			target_0_per = concat_when(X['feature_per'], X['target_flag_0'], 1),
+# 			target_1_num = concat_when(X['feature_num'], X['target_flag_1'], 1),
+# 			target_1_gen = concat_when(X['feature_gen'], X['target_flag_1'], 1),
+# 			#predictors
+# 			#is the firs word an auxilary verb
+# 			target_0_prev1_dependency_aux = concat_when(X['dfeature_prev1_dependency_aux'], X['target_flag_0'], 1),
+# 		)
+# 	) >> mutate(
+# 		target_1_lemma_di = (X.target_1_lemma == 'di').astype(int),
+# 		target_1_lemma_da = (X.target_1_lemma == 'da').astype(int),
+# 		target_1_lemma_a = ((X.target_1_lemma == 'a') | (X.target_1_lemma == 'al')).astype(int),
+# 		target_1_lemma_in = (X.target_1_lemma == 'in').astype(int),
+# 	)
+# )
 
 
 

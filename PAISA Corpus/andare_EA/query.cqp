@@ -1,0 +1,5 @@
+// conll
+[lemma="andare"][pos="EA?"] cut 5000 expand left to 2s
+
+// kwic
+[lemma="andare"][pos="EA?"] cut 5000
