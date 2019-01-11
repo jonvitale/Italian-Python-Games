@@ -1,5 +1,14 @@
  // conll
- [lemma="(ci|ne)"] cut 5000 expand left to 2s
+ // note, for some reason this is returning some sentences that have tokens that start over at 1 part-way through
+ // use this regex in sublime text to find such cases, and continue the token count manually
+ // (.*)(?:^[\d].*\n){1}^1\s
+[pos="FS"] []{1, 20} [pos="FS"] []{1, 15} [lemma="(ci|ne)"] []{1, 15} [pos="FS"] cut 6000
 
  // kwic
-  [lemma="(ci|ne)"] cut 5000
+ // re for words
+ // \<[.!?].+?[.!?]+?.*?\s+(ci|ce|ne|c'|n')\s+.*?\W\>
+[pos="FS"] []{1, 20} [pos="FS"] []{1, 15} [lemma="(ci|ne)"] []{1, 15} [pos="FS"] cut 6000
+
+
+/// call for format_words
+// python format_words.py "ci_ne" "\<[.!?].+?(?:[.!?]+\s*)+?.*?\s+(ci|ce|ne|c'|n')\s+.*?\W\>" --drop-first-sentence --simple

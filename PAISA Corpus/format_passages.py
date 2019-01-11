@@ -118,7 +118,8 @@ for feat in auto_features:
 			)
 		)
 		# make these features an int
-		passages.loc[:,'_feat'] = passages.loc[:,'_feat'].astype(float).astype(int)
+		#passages.loc[:,'_feat'] = passages.loc[:,'_feat'].astype(float).astype(int)
+		passages['_feat'] = pd.to_numeric(passages['_feat'], errors='coerce', downcast='integer')
 		passages = passages.rename(columns = {
 			'_feat': 'target_'+ str(t) + '_' + feat, 
 		})
